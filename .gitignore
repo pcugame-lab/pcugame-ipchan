@@ -1,0 +1,51 @@
+# 환경변수 (절대 커밋 금지)
+.env
+
+# 로그 및 결과 파일
+logs/*.log
+logs/*.json
+logs/*.txt
+
+# 로그 디렉터리 자체는 유지 (빈 디렉터리 추적용)
+!logs/.gitkeep
+
+# 테스트
+tests/
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# 가상환경
+.venv/
+venv/
+env/
+
+# Claude Code
+.claude/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# pytest
+.pytest_cache/
+
+# 이미지
+*.png
+
+# macOS
+.DS_Store
+
+# Docker
+*.dockerignore

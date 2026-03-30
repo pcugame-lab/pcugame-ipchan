@@ -1,0 +1,8 @@
+# Discord 봇 프레임워크
+discord.py==2.3.2
+
+# 환경변수 로드 (.env 파일 지원)
+python-dotenv==1.0.1
+
+# 비동기 웹서버 (IP claim 엔드포인트)
+aiohttp>=3.9
