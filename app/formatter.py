@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import math
+import unicodedata
 
 import discord
 
@@ -9,7 +10,37 @@ from app.data import IPEntry, UserRecord
 
 logger = logging.getLogger(__name__)
 
-_PER_PAGE = 20  # 페이지당 항목 수 (embed 필드 1024자 제한 고려)
+_PER_PAGE = 15  # 페이지당 항목 수 (코드 블록 2000자 제한 고려)
+
+
+# ---------------------------------------------------------------------------
+# 문자열 표시 폭 계산 (한글·전각 = 2, 반각 = 1)
+# ---------------------------------------------------------------------------
+
+def _display_width(s: str) -> int:
+    """문자열의 터미널 표시 폭을 계산한다. 전각(한글 등) = 2, 반각 = 1."""
+    w = 0
+    for ch in s:
+        cat = unicodedata.east_asian_width(ch)
+        w += 2 if cat in ("W", "F") else 1
+    return w
+
+
+def _pad(s: str, width: int) -> str:
+    """표시 폭 기준으로 오른쪽 패딩을 추가한다."""
+    return s + " " * (width - _display_width(s))
+
+
+def _truncate(s: str, max_width: int) -> str:
+    """표시 폭 기준으로 잘라내고 말줄임표를 붙인다."""
+    w = 0
+    for i, ch in enumerate(s):
+        cat = unicodedata.east_asian_width(ch)
+        cw = 2 if cat in ("W", "F") else 1
+        if w + cw > max_width - 1:
+            return s[:i] + "…"
+        w += cw
+    return s
 
 
 # ---------------------------------------------------------------------------
@@ -20,7 +51,7 @@ def build_status_pages(
     entries: list[tuple[UserRecord, IPEntry]],
     ip_prefix: str,
 ) -> list[discord.Embed]:
-    """(UserRecord, IPEntry) 쌍 목록을 페이지 embed 목록으로 변환한다."""
+    """(UserRecord, IPEntry) 쌍 목록을 코드 블록 표 형식의 embed 목록으로 변환한다."""
     if not entries:
         embed = discord.Embed(
             title=f"🖥️ {ip_prefix}.x 사용 현황",
@@ -33,25 +64,50 @@ def build_status_pages(
     total_pages = max(1, math.ceil(total / _PER_PAGE))
     pages = []
 
+    # 컬럼 폭 설정
+    col_ip = 5    # 마지막 옥텟 (최대 3자리 + 여유)
+    col_name = 10  # 이름
+    col_dev = 10   # 기기
+    col_date = 10  # 등록일
+    col_src = 2    # 방식
+
+    header = (
+        f" {'IP':>{col_ip}} │ "
+        f"{'이름':<{col_name - 2}}│ "
+        f"{'기기':<{col_dev - 2}}│ "
+        f"{'등록일':<{col_date - 2}}│"
+        f"{'':>{col_src}}"
+    )
+    separator = "─" * (col_ip + 1) + "┼" + "─" * (col_name + 1) + "┼" + "─" * (col_dev + 1) + "┼" + "─" * (col_date + 1) + "┼" + "─" * (col_src + 1)
+
     for p in range(total_pages):
         chunk = entries[p * _PER_PAGE : (p + 1) * _PER_PAGE]
+        lines = [header, separator]
 
-        col_ip = "\n".join(f"`{ip.address}`" for _, ip in chunk)
-        col_person = "\n".join(ip.person_name or "—" for _, ip in chunk)
-        col_detail = "\n".join(
-            f"{ip.device_label or '—'} · {ip.created_at[:10]} "
-            f"{'🤖' if ip.source == 'auto' else '✏️'}"
-            for _, ip in chunk
-        )
+        for _, ip in chunk:
+            last_octet = ip.address.split(".")[-1] if "." in ip.address else ip.address
+            name = _truncate(ip.person_name or "—", col_name)
+            dev = _truncate(ip.device_label or "—", col_dev)
+            date = ip.created_at[:10]
+            src = "🤖" if ip.source == "auto" else "✏️"
+
+            lines.append(
+                f" {last_octet:>{col_ip}} │ "
+                f"{_pad(name, col_name)}│ "
+                f"{_pad(dev, col_dev)}│ "
+                f"{date:<{col_date}}│"
+                f"{src}"
+            )
+            lines.append(separator)
+
+        table = "```\n" + "\n".join(lines) + "\n```"
 
         embed = discord.Embed(
             title=f"🖥️ {ip_prefix}.x 사용 현황",
+            description=table,
             color=discord.Color.blue(),
         )
-        embed.add_field(name="IP주소",       value=col_ip,     inline=True)
-        embed.add_field(name="이름",          value=col_person, inline=True)
-        embed.add_field(name="기기 · 등록일", value=col_detail, inline=True)
-        embed.set_footer(text=f"페이지 {p + 1}/{total_pages}  |  총 {total}개 IP")
+        embed.set_footer(text=f"페이지 {p + 1}/{total_pages}  |  총 {total}개 IP  |  ✏️ 수동  🤖 자동")
         pages.append(embed)
 
     return pages
