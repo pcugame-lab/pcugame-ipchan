@@ -2,11 +2,11 @@ from __future__ import annotations
 
 import logging
 import discord
-from app.connect import ConnectView, build_connect_embed
+from app.connect import ConnectView
 from app.security import check_all_permissions
 
 logger = logging.getLogger(__name__)
-MISSING_RANGE = '마지막 옥텟 정보가 입력되어 있지 않아서 추천은 불가능하다'
+MISSING_RANGE = '추천할 IP 범위가 설정되지 않았습니다. 관리자에게 문의하세요.'
 
 
 def available_ips(config, registry):
@@ -23,10 +23,9 @@ def add_recommendation_info(embed, config, registry):
     else:
         count = len(available_ips(config, registry))
         start, end = config.ip_last_octet_range
-        text = (f'끝자리 {start}~{end} 중 등록 데이터상 미등록 IP **{count}개**\n'
-                '아래에서 번호를 선택하면 **본인 IP로 즉시 등록**됩니다.\n'
-                '등록부 기준이며 실제 네트워크 사용 여부를 확인한 결과는 아닙니다.' if count else
-                f'끝자리 {start}~{end} 범위에 등록 데이터상 비어 있는 IP가 없습니다.')
+        text = (f'아래 번호를 선택하면 **내 IP로 등록**됩니다. (남은 번호 {count}개)\n'
+                '실제 사용 중인 IP일 수도 있으니 연결 전 확인하세요.' if count else
+                f'끝자리 {start}~{end}에 비어 있는 IP가 없습니다.')
     embed.add_field(name='사용할 IP 추천', value=text, inline=False)
 
 
@@ -73,7 +72,7 @@ class RecommendView(ConnectView):
                     self.remove_item(item)
 
     def embed(self):
-        embed = build_connect_embed(self.bot.config.ip_prefix, self.ip)
+        embed = super().embed()
         add_recommendation_info(embed, self.bot.config, self.bot.registry)
         return embed
 
@@ -117,8 +116,9 @@ class RecommendView(ConnectView):
             await interaction.response.send_message(message, ephemeral=True)
             return
         logger.info('추천 IP 선택 등록: user_id=%s ip=%s', user.id, address)
-        embed = build_connect_embed(self.bot.config.ip_prefix, address)
+        view = ConnectView(self.bot.config.ip_prefix, address, guide_step=2)
+        embed = view.embed()
         embed.insert_field_at(0, name='✅ 내 IP로 등록 완료', value=f'`{address}`를 본인 IP로 등록했습니다. 아래 값으로 Windows를 설정하세요.', inline=False)
         await interaction.response.edit_message(content=None, embed=embed,
-                                                view=ConnectView(self.bot.config.ip_prefix, address))
+                                                attachments=[view.guide_file()], view=view)
         self.stop()

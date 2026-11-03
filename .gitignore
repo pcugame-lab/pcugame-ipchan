@@ -40,6 +40,7 @@ env/
 
 # 이미지
 *.png
+!app/assets/connect/*.png
 
 # macOS
 .DS_Store

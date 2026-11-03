@@ -4,7 +4,7 @@ import unittest
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
-from app.connect import ConnectView, build_connect_embed
+from app.connect import ConnectView, GuideStepButton, build_connect_embed
 from app.bot import LabIPBot
 from app.config import load_config
 from app.data import IPRegistry
@@ -32,7 +32,24 @@ class ConnectTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([f.value for f in args['embed'].fields[:4]],
                          ['`203.250.133.221`', '`255.255.255.0`', '`203.250.133.1`', '`8.8.8.8`'])
         self.assertEqual(self.registry.get_all_entries(), [])
+        self.assertEqual(args['embed'].image.url, f"attachment://{args['file'].filename}")
+        args['file'].close()
         args['view'].stop()
+
+    async def test_photo_steps_replace_attachment_and_keep_ip(self):
+        self.i.response.edit_message = AsyncMock()
+        view = ConnectView('203.250.133', '203.250.133.221')
+        buttons = [item for item in view.children if isinstance(item, GuideStepButton)]
+        for step in [1, 2, 0]:
+            await buttons[step].callback(self.i)
+            args = self.i.response.edit_message.call_args.kwargs
+            photo = args['attachments'][0]
+            self.assertEqual(args['embed'].image.url, f'attachment://{photo.filename}')
+            self.assertTrue(photo.fp.read().startswith(b'\x89PNG\r\n\x1a\n'))
+            self.assertEqual(args['embed'].fields[0].value, '`203.250.133.221`')
+            self.assertEqual([b.disabled for b in buttons], [n == step for n in range(3)])
+            photo.close()
+        view.stop()
 
     async def test_buttons_return_only_values(self):
         view = ConnectView('203.250.133', '203.250.133.221')

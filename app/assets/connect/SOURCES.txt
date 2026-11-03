@@ -1,0 +1,19 @@
+Windows 11 screenshots, kept unmodified.
+Source: Kangwon National University, IT Services
+Article: windows 11에서 IP 입력하는 방법 (2023-07-31, updated 2024-02-21)
+https://itservice.kangwon.ac.kr/itservice/bbs/784/detail.do?pageIndex=3&pageItm=10&pstSn=56&searchGbn=0&searchOrderSort=0
+Retrieved: 2026-11-03
+
+01-ethernet.png
+https://cc.gwnu.ac.kr/CrossEditor/binary/images/000168/win11_03.png
+
+02-ip-edit.png
+https://cc.gwnu.ac.kr/CrossEditor/binary/images/000168/win11_04.png
+
+03-ipv4.png
+https://cc.gwnu.ac.kr/CrossEditor/binary/images/000168/win11_06.png
+
+The final screenshot has blank inputs. Use the bot's configured values,
+not the IP addresses or gateway from the source article's other screenshots.
+Images are bundled inside app/ so the bot can upload them as Discord
+attachments without downloading from the source site at runtime.

@@ -4,6 +4,7 @@ from pathlib import Path
 import unittest
 from unittest.mock import patch, AsyncMock
 import test_connect
+from app.connect import GuideStepButton
 from app.config import _load_ip_last_octet_range
 from app.data import IPRegistry
 from app.recommend import RecommendView, RecommendSelect, available_ips, MISSING_RANGE
@@ -63,8 +64,23 @@ class RecommendationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(saved.find_ip_owner(address).user_id,111)
         args = self.i.response.edit_message.call_args.kwargs
         self.assertIn(address,args['embed'].fields[0].value)
+        self.assertEqual(args['view'].guide_step, 2)
+        self.assertEqual(args['embed'].image.url, f"attachment://{args['attachments'][0].filename}")
+        args['attachments'][0].close()
         self.assertFalse(any(isinstance(c,RecommendSelect) for c in args['view'].children))
         args['view'].stop()
+
+    async def test_photo_navigation_keeps_recommendations_without_registering(self):
+        self.configure()
+        view = self.view()
+        button = next(c for c in view.children if isinstance(c, GuideStepButton) and c.step == 1)
+        await button.callback(self.i)
+        args = self.i.response.edit_message.call_args.kwargs
+        self.assertIn('내 IP로 등록', args['embed'].fields[-1].value)
+        self.assertTrue(any(isinstance(c, RecommendSelect) for c in view.children))
+        self.assertEqual(self.registry.count(), 0)
+        args['attachments'][0].close()
+        view.stop()
 
     async def test_concurrent_claim_cannot_take_another_owner(self):
         self.configure()

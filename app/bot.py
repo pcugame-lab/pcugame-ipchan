@@ -488,7 +488,7 @@ class LabIPBot(discord.Client):
                     view=RangeConfirmationView(interaction.user.id, proceed), ephemeral=True)
                 return
             view = RecommendView(self, interaction.user.id, ip)
-            await interaction.followup.send(embed=view.embed(), view=view, ephemeral=True)
+            await interaction.followup.send(embed=view.embed(), file=view.guide_file(), view=view, ephemeral=True)
         except Exception:
             logger.exception("_handle_howtoconnect 처리 중 예외 발생")
             await interaction.followup.send("❌ 안내를 불러오지 못했습니다. 잠시 후 다시 시도하세요.", ephemeral=True)
