@@ -33,7 +33,8 @@ class ConnectTests(unittest.IsolatedAsyncioTestCase):
             'IP 주소\n```\n203.250.133.221\n```\n'
             '서브넷 마스크\n```\n255.255.255.0\n```\n'
             '게이트웨이\n```\n203.250.133.1\n```\n'
-            '기본 설정 DNS\n```\n8.8.8.8\n```')
+            '기본 설정 DNS\n```\n8.8.8.8\n```\n'
+            '대체 DNS\n```\n8.8.4.4\n```')
         self.assertEqual(self.registry.get_all_entries(), [])
         self.assertEqual(args['embed'].fields, [])
         self.assertFalse(args['embed'].title)
@@ -66,6 +67,8 @@ class ConnectTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(args['embed'].image.url, f'attachment://{photo.filename}')
             self.assertTrue(photo.fp.read().startswith(b'\x89PNG\r\n\x1a\n'))
             self.assertEqual(args['embed'].fields[0].value, '```\n203.250.133.221\n```')
+            self.assertEqual(args['embed'].fields[4].name, '대체 DNS')
+            self.assertEqual(args['embed'].fields[4].value, '```\n8.8.4.4\n```')
             self.assertEqual([b.disabled for b in buttons], [n == step for n in range(3)])
             photo.close()
         view.stop()
@@ -81,7 +84,7 @@ class ConnectTests(unittest.IsolatedAsyncioTestCase):
         view = ConnectView('203.250.133')
         self.assertIn('IP 주소\n```\n203.250.133.\n```', view.embed().description)
         self.assertNotIn('203.250.133.xxx', view.embed().description)
-        self.assertEqual(view.embed().description.count('```'), 8)
+        self.assertEqual(view.embed().description.count('```'), 10)
         self.assertEqual(build_connect_embed('203.250.133').fields[0].value, '```\n203.250.133.\n```')
         view.stop()
 

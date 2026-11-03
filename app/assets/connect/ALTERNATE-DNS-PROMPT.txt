@@ -1,0 +1,5 @@
+Editing tool: built-in image_gen
+Input: 03-ipv4.png at commit 115958a
+Output: 03-ipv4.png, adding alternate DNS 8.8.4.4
+
+Use case: text-localization. Edit target: the attached Windows 11 instructional screenshot. Make exactly ONE change: fill the currently blank input box immediately beneath the label 대체 DNS with the exact value 8.8.4.4, as native dark gray sans serif input text aligned left and matching the other entered values. Preserve everything else: all original Korean labels and text, IP 203.250.133.221, subnet mask 255.255.255.0, gateway 203.250.133.1, preferred DNS 8.8.8.8, HTTPS를 통한 DNS set to 끔, IPv4 켬, 수동, red highlight boxes, 저장 and 취소 buttons, the dark navy subtitle panel and all its exact Korean subtitles, crop, aspect ratio, layout and styling. No new labels, captions, logos, attribution, watermark, extra controls or decorative changes. The only added text must be 8.8.4.4 inside the existing alternate DNS input.

@@ -14,10 +14,14 @@ https://cc.gwnu.ac.kr/CrossEditor/binary/images/000168/win11_04.png
 https://cc.gwnu.ac.kr/CrossEditor/binary/images/000168/win11_06.png
 
 Edits: dark subtitle panels below each screenshot; the final screenshot shows
-example inputs 203.250.133.221 / 255.255.255.0 / 203.250.133.1 / 8.8.8.8.
+example inputs 203.250.133.221 / 255.255.255.0 / 203.250.133.1 / 8.8.8.8 / 8.8.4.4.
 The image explicitly labels these as examples. Users must enter their own
 values from the bot, including their assigned IP address.
-Editing tool: built-in image_gen. Exact prompts: CAPTION-PROMPTS.txt.
+Editing tool: built-in image_gen.
+Exact prompts: CAPTION-PROMPTS.txt and ALTERNATE-DNS-PROMPT.txt.
 Source attribution is retained here rather than in Discord messages.
 Images are bundled inside app/ so the bot can upload them as Discord
 attachments without downloading from the source site at runtime.
+
+Google Public DNS addresses (preferred and alternate):
+https://developers.google.com/speed/public-dns/docs/using

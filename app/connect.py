@@ -24,6 +24,7 @@ def connection_values(prefix: str, ip: str | None = None) -> dict[str, str]:
         '서브넷 마스크': '255.255.255.0',
         '게이트웨이': f'{prefix}.1',
         '기본 설정 DNS': '8.8.8.8',
+        '대체 DNS': '8.8.4.4',
     }
 
 

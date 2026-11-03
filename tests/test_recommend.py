@@ -71,7 +71,7 @@ class RecommendationTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn(address,args['embed'].description)
         self.assertFalse(args['view'].show_guide)
         self.assertEqual(args['view'].guide_step, 0)
-        self.assertEqual(args['embed'].description.count('```'), 8)
+        self.assertEqual(args['embed'].description.count('```'), 10)
         self.assertEqual(args['attachments'], [])
         self.assertFalse(any(isinstance(c,RecommendSelect) for c in args['view'].children))
         args['view'].stop()
