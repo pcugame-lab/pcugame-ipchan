@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import os
+import ipaddress
+import json
+import re
 from dataclasses import dataclass
 
 
@@ -9,6 +12,13 @@ class GuildConfig:
     guild_id: int
     channel_id: int | None       # None이면 모든 채널에서 사용 가능
     allowed_role_id: int | None  # None이면 역할 제한 없음
+
+
+@dataclass(frozen=True)
+class WakeTarget:
+    ip: str
+    mac: str
+    name: str
 
 
 @dataclass(frozen=True)
@@ -26,6 +36,7 @@ class Config:
     rate_limit_max: int = 10
     admin_user_ids: frozenset[int] = frozenset()
     ip_last_octet_range: tuple[int, int] | None = None
+    wol_targets: tuple[WakeTarget, ...] = ()
 
     def is_admin(self, user_id: int) -> bool:
         return user_id in self.admin_user_ids
@@ -61,6 +72,7 @@ def load_config() -> Config:
         rate_limit_max=int(os.environ.get("RATE_LIMIT_MAX", "10")),
         admin_user_ids=_load_admin_user_ids(),
         ip_last_octet_range=_load_ip_last_octet_range(),
+        wol_targets=_load_wol_targets(ip_prefix),
     )
 
 
@@ -112,3 +124,39 @@ def _load_ip_last_octet_range() -> tuple[int, int] | None:
     if not 1 <= start <= end <= 254:
         raise ValueError("IP_LAST_OCTET_RANGE는 1~254 사이의 오름차순 범위여야 합니다.")
     return start, end
+
+
+def _load_wol_targets(prefix: str) -> tuple[WakeTarget, ...]:
+    raw = os.environ.get('WOL_TARGETS', '').strip()
+    if not raw:
+        return ()
+    try:
+        rows = json.loads(raw)
+        network = ipaddress.IPv4Network(f'{prefix}.0/24')
+        if not isinstance(rows, list) or len(rows) > 25:
+            raise ValueError('대상은 최대 25개의 배열로 지정하세요.')
+        targets = []
+        seen_ips, seen_macs = set(), set()
+        for row in rows:
+            ip = str(row['ip']).strip()
+            if ip.isascii() and ip.isdecimal():
+                ip = f'{prefix}.{ip}'
+            address = ipaddress.IPv4Address(ip)
+            if address not in network or address in (network.network_address, network.broadcast_address):
+                raise ValueError('같은 대역의 PC IP를 지정하세요.')
+            mac = row['mac'].strip().lower().replace('-', ':')
+            if not re.fullmatch(r'(?:[0-9a-f]{2}:){5}[0-9a-f]{2}', mac):
+                raise ValueError('유선 MAC 주소 형식을 확인하세요.')
+            if int(mac[:2], 16) & 1 or mac == '00:00:00:00:00:00':
+                raise ValueError('PC의 유니캐스트 MAC 주소를 지정하세요.')
+            name = row.get('name', '').strip() or f'PC {address.packed[-1]}'
+            if len(name) > 80 or any(ord(c) < 32 for c in name):
+                raise ValueError('기기 이름은 제어문자 없이 80자 이내로 지정하세요.')
+            if ip in seen_ips or mac in seen_macs:
+                raise ValueError('중복된 IP 또는 MAC 주소가 있습니다.')
+            seen_ips.add(ip)
+            seen_macs.add(mac)
+            targets.append(WakeTarget(ip, mac, name))
+        return tuple(targets)
+    except (ValueError, KeyError, TypeError, AttributeError) as exc:
+        raise ValueError(f'WOL_TARGETS 설정 오류: {exc}') from exc

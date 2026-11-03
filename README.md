@@ -25,7 +25,8 @@ IP 현황 조회부터 번호 선택, 본인 명의 등록, Windows 연결 안�
 | 모바일 보기 | 결과의 버튼으로 전환하며 IP는 마지막 옥텟만 표시 |
 | IP 추천 | 지정 범위에서 등록부에 없는 번호를 제안하고 선택 즉시 본인 명의로 저장 |
 | 범위 밖 확인 | 할당 범위 밖의 주소는 확인 후 처리하며, 다른 서브넷의 주소는 거부 |
-| Windows 연결 안내 | 한국어 설정 항목명, IPv4 입력값, 항목별 복사용 버튼 제공 |
+| Windows 연결 안내 | IPv4 입력값의 복사용 코드 박스와 요청 시 사진 안내 제공 |
+| 원격 전원 켜기 | `/wakeonlan`의 드롭다운에서 설정된 PC를 선택하여 깨우기 요청 전송 |
 | 현재 IP 감지 | 일회용 링크를 통한 브라우저 확인과 IP 등록 |
 | 관리자 기능 | 다른 사용자의 IP 해제와 등록 정보 수정 지원 |
 
@@ -78,6 +79,7 @@ docker compose logs -f labip-bot
 | `/status` | 전체 IP 현황, 페이지 이동, 모바일 보기 | `/status` |
 | `/recommend` | 미등록 IP 추천과 선택 등록 | `/recommend` |
 | `/howtoconnect [ip]` | Windows 유선 인터넷 설정 안내 | `/howtoconnect ip:100` |
+| `/wakeonlan` | 드롭다운에서 켤 PC 선택 | `/wakeonlan` |
 | `/register [ip] [device] [person]` | 직접 등록 또는 자동 감지 링크 발급 | `/register ip:100 device:노트북 person:홍길동` |
 | `/change <ip> [device] [person]` | 등록된 기기·이름 수정 | `/change ip:100 device:데스크탑` |
 | `/release <ip 또는 이름>` | IP 또는 이름으로 등록 해제 | `/release ip:100` |
@@ -101,7 +103,7 @@ flowchart LR
     B --> C["사용자가 번호 선택"]
     C --> D["권한·등록 가능 여부 재검사"]
     D --> E["본인 명의로 저장"]
-    E --> F["Windows 설정값과 복사용 버튼 표시"]
+    E --> F["Windows 설정값의 복사용 코드 박스 표시"]
 ```
 
 - `IP_LAST_OCTET_RANGE=100-199`는 양 끝을 포함한다. 범위는 `1~254` 내에서 지정하며 게이트웨이 끝자리 `1`은 추천에서 제외한다.
@@ -120,7 +122,7 @@ flowchart LR
 
 ### Windows 설정값
 
-`/howtoconnect`는 **설정 → 네트워크 및 인터넷 → 이더넷 → IP 할당 → 편집** 경로와 기존 IPv4 속성 창 경로를 안내한다. 본인 등록 IP가 하나면 자동으로 표시하며, 여러 개면 `ip`로 지정할 수 있다. 안내 조회와 `ip` 지정만으로는 등록되지 않는다.
+`/howtoconnect`는 설정값만 표시한다. **설정 방법 보기**를 누르면 **설정 → 네트워크 및 인터넷 → 이더넷 → IP 할당 → 편집**의 사진 안내를 표시한다. 본인 등록 IP가 하나면 자동으로 표시하며, 여러 개면 `ip`로 지정할 수 있다. 미선택 시 IP는 마지막 옥텟을 비운 `IP_PREFIX.`로 표시한다. 안내 조회와 `ip` 지정만으로는 등록되지 않는다.
 
 | 설정 항목 | 표시값 |
 | --- | --- |
@@ -129,8 +131,23 @@ flowchart LR
 | 서브넷 접두사 길이 | `24` |
 | 게이트웨이 | `IP_PREFIX.1` |
 | 기본 설정 DNS | `8.8.8.8` |
+| 대체 DNS | `8.8.4.4` |
 
-항목 버튼은 값 하나를 복사용 코드 박스로 표시한다. Discord 버튼으로 클립보드에 직접 기록하지는 않는다. Windows 설정은 사용자가 직접 입력한다.
+각 값은 항목별 코드 박스로 표시한다. Windows 설정은 사용자가 직접 입력한다.
+
+### 원격 전원 켜기
+
+`/wakeonlan`을 실행하면 본인에게만 PC 선택 드롭다운을 표시한다. PC를 선택해야 깨우기 요청을 전송한다. 기존 서버·채널·역할 제한을 적용하고, 선택 시 권한과 대상 설정을 다시 확인한다. 다른 명령어와 IP 등록 데이터는 변경하지 않는다.
+
+서버의 `WOL_TARGETS`에 최대 25대의 IP·유선 MAC 주소·기기 이름을 JSON 배열로 설정한다. IP는 마지막 옥텟 또는 전체 주소를 사용한다. 공란이면 대상 선택을 제공하지 않는다.
+
+```dotenv
+WOL_TARGETS=[{"ip":"223","mac":"02:00:00:00:00:01","name":"테스트 PC"}]
+```
+
+위 MAC은 형식 예시이므로 실제 유선 MAC으로 변경한다. 봇은 대상과 같은 유선 서브넷에서 실행하며, PC의 BIOS/UEFI와 운영체제에서 Wake-on-LAN을 활성화한다. 대상 서브넷의 브로드캐스트 주소로 UDP 9번 포트에 Magic Packet을 3회 전송한다. 같은 PC에 대한 요청은 전체 사용자와 선택창에서 30초간 제한한다.
+
+봇의 성공 응답은 전송 성공을 뜻하며 실제 부팅 완료를 뜻하지 않는다. PC 종료나 재부팅 명령은 실행하지 않는다. Windows 전원 상태별 지원 조건은 [Microsoft 안내](https://learn.microsoft.com/en-us/troubleshoot/windows-client/deployment/wake-on-lan-feature)를 참조한다.
 
 ## 환경변수
 
@@ -144,6 +161,7 @@ flowchart LR
 | `GUILD_N_ROLE_ID` | 공란 허용 | 명령어 허용 역할 |
 | `IP_PREFIX` | 필수 | 등록 허용 서브넷의 앞 3옥텟 |
 | `IP_LAST_OCTET_RANGE` | 공란 / `시작-끝` | IP 추천과 범위 밖 확인 기준 |
+| `WOL_TARGETS` | 공란 / JSON 배열 | 원격으로 켤 PC의 IP·유선 MAC·기기 이름 |
 | `ADMIN_USER_IDS` | 공란 / 쉼표 구분 ID | 관리자 목록 |
 | `WEB_HOST` | `127.0.0.1` | 웹서버 bind 주소 |
 | `WEB_PORT` | `8080` | 웹서버 포트 |
@@ -188,7 +206,8 @@ python -m unittest discover -s tests -v
 | --- | --- |
 | [`app/bot.py`](app/bot.py) | 슬래시 명령어와 권한 처리 |
 | [`app/formatter.py`](app/formatter.py) | 현황 출력과 모바일 전환 |
-| [`app/connect.py`](app/connect.py) | Windows 연결 안내와 복사용 버튼 |
+| [`app/connect.py`](app/connect.py) | Windows 설정값과 사진 안내 |
+| [`app/wakeonlan.py`](app/wakeonlan.py) | 원격 전원 켜기 드롭다운과 Magic Packet 전송 |
 | [`app/recommend.py`](app/recommend.py) | 미등록 IP 조회와 선택 등록 |
 | [`app/range_confirmation.py`](app/range_confirmation.py) | 범위 밖 확인 |
 | [`app/webserver.py`](app/webserver.py) | 자동 등록 웹 요청 |

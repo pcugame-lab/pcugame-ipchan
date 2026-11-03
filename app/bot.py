@@ -13,6 +13,7 @@ from app.security import check_all_permissions
 from app.recommend import RecommendView
 from app.range_confirmation import RangeConfirmationView, outside_range, warning_text
 from app.tokens import TokenStore
+from app.wakeonlan import WakeService, WakeView
 
 logger = logging.getLogger(__name__)
 
@@ -86,6 +87,7 @@ class LabIPBot(discord.Client):
         self.registry = registry
         self.token_store = token_store
         self.tree = app_commands.CommandTree(self)
+        self.wake_service = WakeService()
 
         self._register_commands()
 
@@ -162,6 +164,10 @@ class LabIPBot(discord.Client):
             @self.tree.command(name="recommend", description="미등록 IP를 추천받고 선택한 번호를 내 IP로 등록합니다.", guild=guild_obj)
             async def cmd_recommend(interaction: discord.Interaction) -> None:
                 await self._handle_howtoconnect(interaction)
+
+            @self.tree.command(name="wakeonlan", description="켤 PC를 선택해 원격으로 켜기 요청을 보냅니다.", guild=guild_obj)
+            async def cmd_wakeonlan(interaction: discord.Interaction) -> None:
+                await self._handle_wakeonlan(interaction)
 
             @self.tree.command(
                 name="help",
@@ -492,6 +498,18 @@ class LabIPBot(discord.Client):
         except Exception:
             logger.exception("_handle_howtoconnect 처리 중 예외 발생")
             await interaction.followup.send("❌ 안내를 불러오지 못했습니다. 잠시 후 다시 시도하세요.", ephemeral=True)
+
+    async def _handle_wakeonlan(self, interaction: discord.Interaction) -> None:
+        await interaction.response.defer(ephemeral=True)
+        error, _ = check_all_permissions(interaction, self.config.guilds)
+        if error:
+            await interaction.followup.send(f'❌ {error}', ephemeral=True)
+            return
+        if not self.config.wol_targets:
+            await interaction.followup.send('켤 PC가 설정되지 않았습니다. 관리자에게 문의하세요.', ephemeral=True)
+            return
+        embed = discord.Embed(title='💡 PC 켜기', description='켤 PC를 선택하세요.', color=discord.Color.blue())
+        await interaction.followup.send(embed=embed, view=WakeView(self, interaction.user.id), ephemeral=True)
 
     async def _handle_help(self, interaction: discord.Interaction) -> None:
         await interaction.response.defer(ephemeral=True)
