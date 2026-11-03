@@ -1,4 +1,4 @@
-Windows 11 screenshots, kept unmodified.
+Windows 11 screenshots, adapted with Korean instructional subtitles.
 Source: Kangwon National University, IT Services
 Article: windows 11에서 IP 입력하는 방법 (2023-07-31, updated 2024-02-21)
 https://itservice.kangwon.ac.kr/itservice/bbs/784/detail.do?pageIndex=3&pageItm=10&pstSn=56&searchGbn=0&searchOrderSort=0
@@ -13,7 +13,11 @@ https://cc.gwnu.ac.kr/CrossEditor/binary/images/000168/win11_04.png
 03-ipv4.png
 https://cc.gwnu.ac.kr/CrossEditor/binary/images/000168/win11_06.png
 
-The final screenshot has blank inputs. Use the bot's configured values,
-not the IP addresses or gateway from the source article's other screenshots.
+Edits: dark subtitle panels below each screenshot; the final screenshot shows
+example inputs 203.250.133.221 / 255.255.255.0 / 203.250.133.1 / 8.8.8.8.
+The image explicitly labels these as examples. Users must enter their own
+values from the bot, including their assigned IP address.
+Editing tool: built-in image_gen. Exact prompts: CAPTION-PROMPTS.txt.
+Source attribution is retained here rather than in Discord messages.
 Images are bundled inside app/ so the bot can upload them as Discord
 attachments without downloading from the source site at runtime.

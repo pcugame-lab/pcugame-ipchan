@@ -73,7 +73,8 @@ class RecommendView(ConnectView):
 
     def embed(self):
         embed = super().embed()
-        add_recommendation_info(embed, self.bot.config, self.bot.registry)
+        if self.show_guide:
+            add_recommendation_info(embed, self.bot.config, self.bot.registry)
         return embed
 
     @discord.ui.button(label='추천 이전', row=2, style=discord.ButtonStyle.secondary)
@@ -116,9 +117,10 @@ class RecommendView(ConnectView):
             await interaction.response.send_message(message, ephemeral=True)
             return
         logger.info('추천 IP 선택 등록: user_id=%s ip=%s', user.id, address)
-        view = ConnectView(self.bot.config.ip_prefix, address, guide_step=2)
+        view = ConnectView(self.bot.config.ip_prefix, address,
+                           guide_step=2 if self.show_guide else 0, show_guide=self.show_guide)
         embed = view.embed()
-        embed.insert_field_at(0, name='✅ 내 IP로 등록 완료', value=f'`{address}`를 본인 IP로 등록했습니다. 아래 값으로 Windows를 설정하세요.', inline=False)
-        await interaction.response.edit_message(content=None, embed=embed,
-                                                attachments=[view.guide_file()], view=view)
+        await interaction.response.edit_message(
+            content='✅ 내 IP로 등록했습니다.', embed=embed,
+            attachments=[view.guide_file()] if view.show_guide else [], view=view)
         self.stop()

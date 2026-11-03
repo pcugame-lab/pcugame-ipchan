@@ -4,7 +4,6 @@ from pathlib import Path
 
 import discord
 
-GUIDE_SOURCE = 'https://itservice.kangwon.ac.kr/itservice/bbs/784/detail.do?pstSn=56'
 GUIDE_ASSETS = Path(__file__).parent / 'assets' / 'connect'
 GUIDE_STEPS = (
     ('① 이더넷 열기', '01-ethernet.png',
@@ -14,7 +13,7 @@ GUIDE_STEPS = (
      '사진의 빨간 칸처럼 **IP 할당** 옆 **편집**을 누르세요.'),
     ('③ 값 입력', '03-ipv4.png',
      '사진처럼 **수동**을 선택하고 **IPv4**를 켜세요.\n'
-     '아래 값을 같은 이름의 칸에 넣고 **저장**하세요.\n'
+     '사진은 **221번 예시**입니다. **아래 본인 값**을 입력하고 **저장**하세요.\n'
      '서브넷 마스크 대신 **접두사 길이**를 물으면 `24`를 입력하세요.'),
 )
 
@@ -28,13 +27,18 @@ def connection_values(prefix: str, ip: str | None = None) -> dict[str, str]:
     }
 
 
-def build_connect_embed(prefix: str, ip: str | None = None, step: int = 0) -> discord.Embed:
-    title, filename, instruction = GUIDE_STEPS[step]
-    embed = discord.Embed(
-        title=f'🌐 유선 인터넷 연결 · {title}',
-        description=instruction,
+def build_values_embed(prefix: str, ip: str | None = None) -> discord.Embed:
+    return discord.Embed(
+        description='\n'.join(f'{label}: `{value}`' for label, value in connection_values(prefix, ip).items()),
         color=discord.Color.blue(),
     )
+
+
+def build_connect_embed(prefix: str, ip: str | None = None, step: int = 0) -> discord.Embed:
+    title, filename, instruction = GUIDE_STEPS[step]
+    embed = build_values_embed(prefix, ip)
+    embed.title = f'🌐 유선 인터넷 연결 · {title}'
+    embed.description = instruction
     for label, value in connection_values(prefix, ip).items():
         embed.add_field(name=label, value=f'`{value}`', inline=False)
     if ip is None:
@@ -43,7 +47,6 @@ def build_connect_embed(prefix: str, ip: str | None = None, step: int = 0) -> di
             value='`xxx` 대신 사용할 번호가 필요합니다. 아래에서 선택하거나, 등록한 번호로 `/howtoconnect ip:221`처럼 실행하세요.',
             inline=False,
         )
-    embed.add_field(name='화면 출처', value=f'[강원대학교 정보화본부]({GUIDE_SOURCE})', inline=False)
     embed.set_image(url=f'attachment://{filename}')
     embed.set_footer(text='사진은 아래 ① ② ③ 버튼으로 넘기세요. 항목 버튼을 누르면 복사할 값이 표시됩니다.')
     return embed
@@ -65,6 +68,17 @@ class ValueButton(discord.ui.Button):
         await interaction.response.send_message(f'```\n{self.value}\n```', ephemeral=True)
 
 
+class GuideHelpButton(discord.ui.Button):
+    def __init__(self):
+        super().__init__(label='설정 방법 보기', row=3, style=discord.ButtonStyle.primary)
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        self.view.show_guide = True
+        self.view.add_guide_controls()
+        await interaction.response.edit_message(
+            embed=self.view.embed(), attachments=[self.view.guide_file()], view=self.view)
+
+
 class GuideStepButton(discord.ui.Button):
     def __init__(self, step: int):
         super().__init__(label=GUIDE_STEPS[step][0], row=3)
@@ -78,13 +92,24 @@ class GuideStepButton(discord.ui.Button):
 
 
 class ConnectView(discord.ui.View):
-    def __init__(self, prefix: str, ip: str | None = None, guide_step: int = 0):
+    def __init__(self, prefix: str, ip: str | None = None, guide_step: int = 0, show_guide: bool = False):
         super().__init__(timeout=900)
         self.prefix = prefix
         self.ip = ip
         self.guide_step = guide_step
+        self.show_guide = show_guide
         for label, value in connection_values(prefix, ip).items():
             self.add_item(ValueButton(label, value, needs_ip=label == 'IP 주소' and ip is None))
+        if show_guide:
+            self.add_guide_controls()
+        else:
+            self.add_item(GuideHelpButton())
+
+    def add_guide_controls(self) -> None:
+        for item in list(self.children):
+            if isinstance(item, (GuideHelpButton, GuideStepButton)) or (
+                    isinstance(item, ValueButton) and item.label == '접두사 길이'):
+                self.remove_item(item)
         self.add_item(ValueButton('접두사 길이', '24'))
         for step in range(len(GUIDE_STEPS)):
             self.add_item(GuideStepButton(step))
@@ -101,4 +126,6 @@ class ConnectView(discord.ui.View):
         return discord.File(GUIDE_ASSETS / GUIDE_STEPS[self.guide_step][1])
 
     def embed(self) -> discord.Embed:
+        if not self.show_guide:
+            return build_values_embed(self.prefix, self.ip)
         return build_connect_embed(self.prefix, self.ip, self.guide_step)

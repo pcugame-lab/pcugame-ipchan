@@ -4,7 +4,7 @@ import unittest
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
-from app.connect import ConnectView, GuideStepButton, build_connect_embed
+from app.connect import ConnectView, GuideHelpButton, GuideStepButton, build_connect_embed
 from app.bot import LabIPBot
 from app.config import load_config
 from app.data import IPRegistry
@@ -29,16 +29,33 @@ class ConnectTests(unittest.IsolatedAsyncioTestCase):
         args = self.i.followup.send.call_args.kwargs
         self.assertTrue(args['ephemeral'])
         self.assertLess(len(args['embed']), 6000)
-        self.assertEqual([f.value for f in args['embed'].fields[:4]],
-                         ['`203.250.133.221`', '`255.255.255.0`', '`203.250.133.1`', '`8.8.8.8`'])
+        self.assertEqual(args['embed'].description.splitlines(), [
+            'IP 주소: `203.250.133.221`', '서브넷 마스크: `255.255.255.0`',
+            '게이트웨이: `203.250.133.1`', '기본 설정 DNS: `8.8.8.8`'])
         self.assertEqual(self.registry.get_all_entries(), [])
-        self.assertEqual(args['embed'].image.url, f"attachment://{args['file'].filename}")
-        args['file'].close()
+        self.assertEqual(args['embed'].fields, [])
+        self.assertFalse(args['embed'].title)
+        self.assertFalse(args['embed'].image.url)
+        self.assertNotIn('file', args)
+        self.assertTrue(any(isinstance(c, GuideHelpButton) for c in args['view'].children))
         args['view'].stop()
+
+    async def test_help_button_reveals_screenshots_only_on_request(self):
+        self.i.response.edit_message = AsyncMock()
+        view = ConnectView('203.250.133', '203.250.133.221')
+        await next(c for c in view.children if isinstance(c, GuideHelpButton)).callback(self.i)
+        args = self.i.response.edit_message.call_args.kwargs
+        self.assertTrue(view.show_guide)
+        self.assertIn('이더넷', args['embed'].description)
+        self.assertEqual(args['embed'].image.url, f"attachment://{args['attachments'][0].filename}")
+        self.assertNotIn('출처', str(args['embed'].to_dict()))
+        self.assertEqual(sum(isinstance(c, GuideStepButton) for c in view.children), 3)
+        args['attachments'][0].close()
+        view.stop()
 
     async def test_photo_steps_replace_attachment_and_keep_ip(self):
         self.i.response.edit_message = AsyncMock()
-        view = ConnectView('203.250.133', '203.250.133.221')
+        view = ConnectView('203.250.133', '203.250.133.221', show_guide=True)
         buttons = [item for item in view.children if isinstance(item, GuideStepButton)]
         for step in [1, 2, 0]:
             await buttons[step].callback(self.i)
@@ -52,7 +69,7 @@ class ConnectTests(unittest.IsolatedAsyncioTestCase):
         view.stop()
 
     async def test_buttons_return_only_values(self):
-        view = ConnectView('203.250.133', '203.250.133.221')
+        view = ConnectView('203.250.133', '203.250.133.221', show_guide=True)
         for button, value in zip(view.children, ['203.250.133.221','255.255.255.0','203.250.133.1','8.8.8.8','24']):
             await button.callback(self.i)
             self.i.response.send_message.assert_awaited_with(f'```\n{value}\n```', ephemeral=True)
@@ -68,7 +85,7 @@ class ConnectTests(unittest.IsolatedAsyncioTestCase):
         self.registry.register(111, 'owner', 'Owner', '203.250.133.240')
         await self.bot._handle_howtoconnect(self.i)
         args = self.i.followup.send.call_args.kwargs
-        self.assertEqual(args['embed'].fields[0].value, '`203.250.133.240`')
+        self.assertEqual(args['embed'].description.splitlines()[0], 'IP 주소: `203.250.133.240`')
         args['view'].stop()
 
     async def test_multiple_own_ips_not_arbitrarily_selected(self):
@@ -76,7 +93,7 @@ class ConnectTests(unittest.IsolatedAsyncioTestCase):
             self.registry.register(111, 'owner', 'Owner', f'203.250.133.{last}')
         await self.bot._handle_howtoconnect(self.i)
         args = self.i.followup.send.call_args.kwargs
-        self.assertEqual(args['embed'].fields[0].value, '`203.250.133.xxx`')
+        self.assertEqual(args['embed'].description.splitlines()[0], 'IP 주소: `203.250.133.xxx`')
         args['view'].stop()
 
     async def test_invalid_ip_rejected(self):

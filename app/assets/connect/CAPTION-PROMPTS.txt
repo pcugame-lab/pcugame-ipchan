@@ -1,0 +1,19 @@
+Image 1
+Use case: text-localization. Edit target: attached real Windows 11 screenshot. Preserve the complete original screenshot, original Korean UI text, exact controls, red highlight, positions and aspect ratio. Do not redraw or invent any UI. Extend the canvas ONLY below the screenshot with a solid dark navy subtitle panel. Do not overlay or obscure any screenshot content. Add large crisp white Korean sans serif subtitles centered in this bottom panel, exactly these two lines:
+1단계 · 이더넷 열기
+Win + I → 네트워크 및 인터넷 → 이더넷
+Make the second line slightly smaller. This is a practical setup guide shown in Discord on phones; use very readable typography, minimal styling. No attribution, watermark, logo or other text. Output a single screenshot with its bottom subtitle strip.
+
+Image 2
+Use case: text-localization. Edit target: attached real Windows 11 screenshot. Preserve the complete original screenshot, original Korean UI text, exact controls, red highlight, positions and aspect ratio. Do not redraw or invent any UI. Extend the canvas ONLY below the screenshot with a solid dark navy subtitle panel matching the other guide assets. Do not overlay or obscure any screenshot content. Add large crisp white Korean sans serif subtitles centered in this bottom panel, exactly these two lines:
+2단계 · IP 할당 편집
+빨간 칸의 ‘편집’을 누르세요
+Make the second line slightly smaller. This is a practical setup guide shown in Discord on phones; use very readable typography, minimal styling. No attribution, watermark, logo or other text. Output a single screenshot with its bottom subtitle strip.
+
+Image 3
+Use case: text-localization. Edit target: attached real Windows 11 IPv4 settings screenshot. Preserve the entire original screenshot, Korean UI labels, exact positions of all controls, red highlight boxes and aspect ratio. Fill ONLY the four existing blank input boxes with these exact example values, as native dark gray text aligned left inside their corresponding fields: IP 주소 = 203.250.133.221; 서브넷 마스크 = 255.255.255.0; 게이트웨이 = 203.250.133.1; 기본 설정 DNS = 8.8.8.8. Leave 대체 DNS blank, HTTPS를 통한 DNS set to 끔, 수동 and IPv4 켬 as they are, and 저장 and 취소 buttons visible. These are EXAMPLE values and must be digit-perfect. Do not move, add or remove any UI controls. Extend canvas ONLY below screenshot with a solid dark navy subtitle panel matching the other guide assets; do not cover the original screenshot. In this panel add these exact three lines in large crisp white Korean sans serif type:
+3단계 · 내 IP 입력 후 저장
+예시 IP: 203.250.133.221
+IP 주소는 봇에 표시된 본인 값으로 입력하세요
+First line largest, last line slightly smaller but phone-readable. No attribution, watermark, logo or other text. Output a single screenshot with its bottom subtitle strip.
+
