@@ -71,7 +71,7 @@ class RecommendationTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn(address,args['embed'].description)
         self.assertFalse(args['view'].show_guide)
         self.assertEqual(args['view'].guide_step, 0)
-        self.assertEqual(len(args['embed'].description.splitlines()), 4)
+        self.assertEqual(args['embed'].description.count('```'), 8)
         self.assertEqual(args['attachments'], [])
         self.assertFalse(any(isinstance(c,RecommendSelect) for c in args['view'].children))
         args['view'].stop()
@@ -98,7 +98,7 @@ class RecommendationTests(unittest.IsolatedAsyncioTestCase):
         args = self.i.response.edit_message.call_args.kwargs
         self.assertTrue(args['view'].show_guide)
         self.assertEqual(args['view'].guide_step, 2)
-        self.assertEqual(args['embed'].fields[0].value, f'`{address}`')
+        self.assertEqual(args['embed'].fields[0].value, f'```\n{address}\n```')
         self.assertEqual(args['embed'].image.url, f"attachment://{args['attachments'][0].filename}")
         args['attachments'][0].close()
         args['view'].stop()

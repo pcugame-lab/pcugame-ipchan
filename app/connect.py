@@ -29,9 +29,17 @@ def connection_values(prefix: str, ip: str | None = None) -> dict[str, str]:
 
 def build_values_embed(prefix: str, ip: str | None = None) -> discord.Embed:
     return discord.Embed(
-        description='\n'.join(f'{label}: `{value}`' for label, value in connection_values(prefix, ip).items()),
+        description='\n'.join(
+            f'{label}\n{copyable_value(label, value, ip)}'
+            for label, value in connection_values(prefix, ip).items()),
         color=discord.Color.blue(),
     )
+
+
+def copyable_value(label: str, value: str, ip: str | None) -> str:
+    if label == 'IP 주소' and ip is None:
+        return '사용할 IP 번호를 선택하세요.'
+    return f'```\n{value}\n```'
 
 
 def build_connect_embed(prefix: str, ip: str | None = None, step: int = 0) -> discord.Embed:
@@ -40,32 +48,16 @@ def build_connect_embed(prefix: str, ip: str | None = None, step: int = 0) -> di
     embed.title = f'🌐 유선 인터넷 연결 · {title}'
     embed.description = instruction
     for label, value in connection_values(prefix, ip).items():
-        embed.add_field(name=label, value=f'`{value}`', inline=False)
+        embed.add_field(name=label, value=copyable_value(label, value, ip), inline=False)
     if ip is None:
         embed.add_field(
             name='IP 번호 선택',
-            value='`xxx` 대신 사용할 번호가 필요합니다. 아래에서 선택하거나, 등록한 번호로 `/howtoconnect ip:221`처럼 실행하세요.',
+            value='아래에서 번호를 선택하거나, 등록한 번호로 `/howtoconnect ip:221`처럼 실행하세요.',
             inline=False,
         )
     embed.set_image(url=f'attachment://{filename}')
-    embed.set_footer(text='사진은 아래 ① ② ③ 버튼으로 넘기세요. 항목 버튼을 누르면 복사할 값이 표시됩니다.')
+    embed.set_footer(text='사진은 아래 ① ② ③ 버튼으로 넘기세요.')
     return embed
-
-
-class ValueButton(discord.ui.Button):
-    def __init__(self, label: str, value: str, needs_ip: bool = False):
-        super().__init__(label=label, style=discord.ButtonStyle.secondary, row=0)
-        self.value = value
-        self.needs_ip = needs_ip
-
-    async def callback(self, interaction: discord.Interaction) -> None:
-        if self.needs_ip:
-            await interaction.response.send_message(
-                '먼저 아래 목록에서 IP를 선택하거나 `/howtoconnect ip:221`처럼 본인 번호를 입력하세요.',
-                ephemeral=True,
-            )
-            return
-        await interaction.response.send_message(f'```\n{self.value}\n```', ephemeral=True)
 
 
 class GuideHelpButton(discord.ui.Button):
@@ -98,8 +90,6 @@ class ConnectView(discord.ui.View):
         self.ip = ip
         self.guide_step = guide_step
         self.show_guide = show_guide
-        for label, value in connection_values(prefix, ip).items():
-            self.add_item(ValueButton(label, value, needs_ip=label == 'IP 주소' and ip is None))
         if show_guide:
             self.add_guide_controls()
         else:
@@ -107,10 +97,8 @@ class ConnectView(discord.ui.View):
 
     def add_guide_controls(self) -> None:
         for item in list(self.children):
-            if isinstance(item, (GuideHelpButton, GuideStepButton)) or (
-                    isinstance(item, ValueButton) and item.label == '접두사 길이'):
+            if isinstance(item, (GuideHelpButton, GuideStepButton)):
                 self.remove_item(item)
-        self.add_item(ValueButton('접두사 길이', '24'))
         for step in range(len(GUIDE_STEPS)):
             self.add_item(GuideStepButton(step))
         self.refresh_guide_buttons()

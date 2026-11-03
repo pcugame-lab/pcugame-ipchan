@@ -72,7 +72,7 @@ class RangeConfirmationTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsInstance(view,RangeConfirmationView)
         await view.confirm.callback(self.i)
         args=self.i.followup.send.call_args.kwargs
-        self.assertEqual(args['embed'].description.splitlines()[0], 'IP 주소: `203.250.133.220`')
+        self.assertIn('IP 주소\n```\n203.250.133.220\n```', args['embed'].description)
         self.assertEqual(self.registry.count(),0)
         args['view'].stop()
 

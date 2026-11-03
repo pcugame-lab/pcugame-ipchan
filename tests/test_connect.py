@@ -29,9 +29,11 @@ class ConnectTests(unittest.IsolatedAsyncioTestCase):
         args = self.i.followup.send.call_args.kwargs
         self.assertTrue(args['ephemeral'])
         self.assertLess(len(args['embed']), 6000)
-        self.assertEqual(args['embed'].description.splitlines(), [
-            'IP 주소: `203.250.133.221`', '서브넷 마스크: `255.255.255.0`',
-            '게이트웨이: `203.250.133.1`', '기본 설정 DNS: `8.8.8.8`'])
+        self.assertEqual(args['embed'].description,
+            'IP 주소\n```\n203.250.133.221\n```\n'
+            '서브넷 마스크\n```\n255.255.255.0\n```\n'
+            '게이트웨이\n```\n203.250.133.1\n```\n'
+            '기본 설정 DNS\n```\n8.8.8.8\n```')
         self.assertEqual(self.registry.get_all_entries(), [])
         self.assertEqual(args['embed'].fields, [])
         self.assertFalse(args['embed'].title)
@@ -63,29 +65,30 @@ class ConnectTests(unittest.IsolatedAsyncioTestCase):
             photo = args['attachments'][0]
             self.assertEqual(args['embed'].image.url, f'attachment://{photo.filename}')
             self.assertTrue(photo.fp.read().startswith(b'\x89PNG\r\n\x1a\n'))
-            self.assertEqual(args['embed'].fields[0].value, '`203.250.133.221`')
+            self.assertEqual(args['embed'].fields[0].value, '```\n203.250.133.221\n```')
             self.assertEqual([b.disabled for b in buttons], [n == step for n in range(3)])
             photo.close()
         view.stop()
 
-    async def test_buttons_return_only_values(self):
-        view = ConnectView('203.250.133', '203.250.133.221', show_guide=True)
-        for button, value in zip(view.children, ['203.250.133.221','255.255.255.0','203.250.133.1','8.8.8.8','24']):
-            await button.callback(self.i)
-            self.i.response.send_message.assert_awaited_with(f'```\n{value}\n```', ephemeral=True)
-        view.stop()
+    async def test_only_help_and_photo_navigation_buttons_remain(self):
+        for show_guide, expected_type, count in [(False, GuideHelpButton, 1), (True, GuideStepButton, 3)]:
+            view = ConnectView('203.250.133', '203.250.133.221', show_guide=show_guide)
+            self.assertEqual(len(view.children), count)
+            self.assertTrue(all(isinstance(c, expected_type) for c in view.children))
+            view.stop()
 
     async def test_no_ip_does_not_offer_placeholder_to_copy(self):
         view = ConnectView('203.250.133')
-        await view.children[0].callback(self.i)
-        self.assertNotIn('```', self.i.response.send_message.call_args.args[0])
+        self.assertIn('사용할 IP 번호를 선택하세요.', view.embed().description)
+        self.assertNotIn('203.250.133.xxx', view.embed().description)
+        self.assertEqual(view.embed().description.count('```'), 6)
         view.stop()
 
     async def test_single_own_ip_selected(self):
         self.registry.register(111, 'owner', 'Owner', '203.250.133.240')
         await self.bot._handle_howtoconnect(self.i)
         args = self.i.followup.send.call_args.kwargs
-        self.assertEqual(args['embed'].description.splitlines()[0], 'IP 주소: `203.250.133.240`')
+        self.assertIn('IP 주소\n```\n203.250.133.240\n```', args['embed'].description)
         args['view'].stop()
 
     async def test_multiple_own_ips_not_arbitrarily_selected(self):
@@ -93,7 +96,7 @@ class ConnectTests(unittest.IsolatedAsyncioTestCase):
             self.registry.register(111, 'owner', 'Owner', f'203.250.133.{last}')
         await self.bot._handle_howtoconnect(self.i)
         args = self.i.followup.send.call_args.kwargs
-        self.assertEqual(args['embed'].description.splitlines()[0], 'IP 주소: `203.250.133.xxx`')
+        self.assertIn('사용할 IP 번호를 선택하세요.', args['embed'].description)
         args['view'].stop()
 
     async def test_invalid_ip_rejected(self):

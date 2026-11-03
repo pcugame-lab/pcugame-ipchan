@@ -217,7 +217,7 @@ def build_help_embed(ip_prefix: str) -> discord.Embed:
         value="이 도움말을 표시합니다.",
         inline=False,
     )
-    embed.add_field(name="/howtoconnect [ip]", value="Windows 유선 인터넷 설정 방법과 항목별 복사용 버튼을 표시합니다.", inline=False)
+    embed.add_field(name="/howtoconnect [ip]", value="인터넷 설정값을 복사용 코드 박스로 표시합니다. 설정 방법 보기로 사진 안내를 열 수 있습니다.", inline=False)
     embed.add_field(name="/recommend", value="미등록 IP 추천 목록에서 번호를 선택하면 본인 IP로 등록됩니다.", inline=False)
     embed.set_footer(text=f"허용 대역: {ip_prefix}.1 ~ {ip_prefix}.254  |  ✏️ 수동  🤖 자동")
     return embed
