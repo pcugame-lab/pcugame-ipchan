@@ -23,6 +23,7 @@ class ClaimToken:
     created_at: str             # ISO 8601
     expires_at: str             # ISO 8601
     used: bool
+    confirmation_ip: str | None = None
 
 
 class TokenStore:
@@ -46,6 +47,7 @@ class TokenStore:
         device_label: str,
         person_name: str,
         ttl_seconds: int = _DEFAULT_TTL,
+        confirmation_ip: str | None = None,
     ) -> str:
         """토큰을 생성하고 저장한 뒤 토큰 문자열을 반환한다."""
         self._cleanup_expired()
@@ -61,6 +63,7 @@ class TokenStore:
             created_at=now.isoformat(timespec="seconds"),
             expires_at=(now + timedelta(seconds=ttl_seconds)).isoformat(timespec="seconds"),
             used=False,
+            confirmation_ip=confirmation_ip,
         )
         self._tokens[token_str] = entry
         self._save()

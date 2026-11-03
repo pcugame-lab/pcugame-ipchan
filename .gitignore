@@ -9,9 +9,6 @@ logs/*.txt
 # 로그 디렉터리 자체는 유지 (빈 디렉터리 추적용)
 !logs/.gitkeep
 
-# 테스트
-tests/
-
 # Python
 __pycache__/
 *.py[cod]
@@ -49,3 +46,7 @@ env/
 
 # Docker
 *.dockerignore
+
+# 실행 데이터와 서버 백업
+data/
+backups/

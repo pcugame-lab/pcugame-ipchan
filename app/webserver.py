@@ -3,6 +3,8 @@ from __future__ import annotations
 import html as html_module
 import logging
 import time
+from datetime import datetime
+from app.range_confirmation import WARNING, outside_range
 
 from aiohttp import web
 
@@ -130,11 +132,13 @@ def create_web_app(
     ip_prefix: str,
     rate_limit_window: int = 60,
     rate_limit_max: int = 10,
+    ip_last_octet_range: tuple[int, int] | None = None,
 ) -> web.Application:
     app = web.Application()
     app["registry"] = registry
     app["token_store"] = token_store
     app["ip_prefix"] = ip_prefix
+    app["ip_last_octet_range"] = ip_last_octet_range
     app["rate_limiter"] = RateLimiter(rate_limit_window, rate_limit_max)
     app.router.add_get("/ip/claim", handle_claim_get)
     app.router.add_post("/ip/claim", handle_claim_post)
@@ -194,7 +198,7 @@ async def handle_claim_post(request: web.Request) -> web.Response:
         return _err("토큰이 만료되었거나 이미 사용된 토큰입니다.", 400)
 
     # 클라이언트 IP 추출 (프록시 헤더 무시 — 직접 연결만 신뢰)
-    client_ip = (request.remote or "").strip()
+    client_ip = _client_ip(request)
 
     if not client_ip:
         return _err("IP 주소를 확인할 수 없습니다.", 400)
@@ -208,6 +212,34 @@ async def handle_claim_post(request: web.Request) -> web.Response:
             403,
         )
 
+    try:
+        last = int(parts[-1])
+        if not 1 <= last <= 254:
+            raise ValueError
+    except ValueError:
+        return _err("올바른 IP 주소가 아닙니다.", 400)
+
+    if token.confirmation_ip is not None and (token.confirmation_ip != client_ip or request.method != "POST"):
+        return _err("확인 요청의 IP 또는 요청 방식이 다릅니다. Discord에서 등록 링크를 다시 발급하세요.", 400)
+    bounds = request.app["ip_last_octet_range"]
+    if outside_range(client_ip, bounds) and token.confirmation_ip is None:
+        remaining = max(1, int((datetime.fromisoformat(token.expires_at) - datetime.now()).total_seconds()))
+        confirmation = token_store.create(
+            user_id=token.discord_user_id, discord_username=token.discord_username,
+            discord_display_name=token.discord_display_name, device_label=token.device_label,
+            person_name=token.person_name, ttl_seconds=remaining, confirmation_ip=client_ip)
+        html = (
+            '<!doctype html><html lang="ko"><meta charset="utf-8">'
+            '<meta name="viewport" content="width=device-width, initial-scale=1">'
+            '<title>범위 밖 IP 확인</title><body style="font-family:sans-serif;max-width:520px;margin:60px auto;padding:20px">'
+            f'<h2>{WARNING}</h2><p>현재 IP: <strong>{html_module.escape(client_ip)}</strong></p>'
+            f'<p>할당된 끝자리 범위: {bounds[0]}~{bounds[1]}</p><p>아직 등록하지 않았습니다.</p>'
+            '<form method="post" action="/ip/claim">'
+            f'<input type="hidden" name="token" value="{confirmation}">'
+            '<button type="submit">네, 이 IP로 등록할게요</button></form>'
+            '<p>취소하려면 이 창을 닫으세요.</p></body></html>')
+        return _html_response(html)
+
     success, message = registry.register(
         user_id=token.discord_user_id,
         username=token.discord_username,
@@ -219,7 +251,7 @@ async def handle_claim_post(request: web.Request) -> web.Response:
     )
 
     if not success:
-        return _err(message, 409)
+        return _err(html_module.escape(message), 409)
 
     logger.info(
         f"Auto claim: {client_ip} ← discord_user={token.discord_user_id} "
@@ -234,12 +266,16 @@ async def handle_claim_post(request: web.Request) -> web.Response:
     return _html_response(html)
 
 
+def _client_ip(request: web.Request) -> str:
+    return (request.remote or "").strip()
+
+
 def _html_response(html: str, status: int = 200) -> web.Response:
     return web.Response(
         text=html,
         content_type="text/html",
         status=status,
-        headers={"X-Frame-Options": "DENY"},
+        headers={"X-Frame-Options": "DENY", "Cache-Control": "no-store", "Referrer-Policy": "no-referrer"},
     )
 
 
@@ -248,5 +284,5 @@ def _err(message: str, status: int) -> web.Response:
         text=_ERROR_HTML.format(message=message),
         content_type="text/html",
         status=status,
-        headers={"X-Frame-Options": "DENY"},
+        headers={"X-Frame-Options": "DENY", "Cache-Control": "no-store", "Referrer-Policy": "no-referrer"},
     )

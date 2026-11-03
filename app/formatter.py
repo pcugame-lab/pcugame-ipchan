@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import logging
-import math
 import unicodedata
 
 import discord
@@ -10,106 +9,104 @@ from app.data import IPEntry, UserRecord
 
 logger = logging.getLogger(__name__)
 
-_PER_PAGE = 15  # 페이지당 항목 수 (코드 블록 2000자 제한 고려)
+_PER_PAGE = 20
 
 
-# ---------------------------------------------------------------------------
-# 문자열 표시 폭 계산 (한글·전각 = 2, 반각 = 1)
-# ---------------------------------------------------------------------------
-
-def _display_width(s: str) -> int:
-    """문자열의 터미널 표시 폭을 계산한다. 전각(한글 등) = 2, 반각 = 1."""
-    w = 0
-    for ch in s:
-        cat = unicodedata.east_asian_width(ch)
-        w += 2 if cat in ("W", "F") else 1
-    return w
+def _clean(value: str) -> str:
+    # Keep user input inside the code fence and on a single logical line.
+    return " ".join("".join(
+        ch for ch in value.replace("`", "ˋ")
+        if not unicodedata.category(ch).startswith("C") or ch.isspace()
+    ).split()) or "—"
 
 
-def _pad(s: str, width: int) -> str:
-    """표시 폭 기준으로 오른쪽 패딩을 추가한다."""
-    return s + " " * (width - _display_width(s))
+def _width(value: str) -> int:
+    return sum(0 if unicodedata.combining(ch) else
+               2 if unicodedata.east_asian_width(ch) in ("W", "F") else 1
+               for ch in value)
 
 
-def _truncate(s: str, max_width: int) -> str:
-    """표시 폭 기준으로 잘라내고 말줄임표를 붙인다."""
-    w = 0
-    for i, ch in enumerate(s):
-        cat = unicodedata.east_asian_width(ch)
-        cw = 2 if cat in ("W", "F") else 1
-        if w + cw > max_width - 1:
-            return s[:i] + "…"
-        w += cw
-    return s
+def _wrap(value: str, width: int) -> list[str]:
+    lines, line = [], ""
+    for ch in _clean(value):
+        if _width(line + ch) > width:
+            lines.append(line)
+            line = ""
+        line += ch
+    return lines + [line]
 
 
-# ---------------------------------------------------------------------------
-# 상태 embed 빌더
-# ---------------------------------------------------------------------------
+def _status_box(ip: IPEntry, mobile: bool) -> str:
+    source = "자동" if ip.source == "auto" else "수동"
+    values = [ip.address, ip.person_name, ip.device_label, ip.created_at[:10], source]
+    if mobile:
+        values[0] = ip.address.rsplit(".", 1)[-1]
+        return "```\n" + "\n".join(
+            "\n".join(_wrap(f"{label}: {value or '—'}", 26))
+            for label, value in zip(("IP", "이름", "기기", "등록일", "방식"), values)
+        ) + "\n```"
+    raise ValueError("Mobile boxes only")
+
+
+def _build_column_pages(entries, ip_prefix):
+    chunks, columns = [], [[], [], []]
+    for _, ip in entries:
+        source = "🤖" if ip.source == "auto" else "✏️"
+        cells = [f"`{_clean(ip.address)}`", f"`{_clean(ip.person_name)}`",
+                 f"`{_clean(ip.device_label)} · {_clean(ip.created_at[:10])}` {source}"]
+        if columns[0] and (len(columns[0]) >= _PER_PAGE or any(
+                len("\n".join(col + [cell])) > 1024
+                for col, cell in zip(columns, cells))):
+            chunks.append(columns)
+            columns = [[], [], []]
+        for col, cell in zip(columns, cells):
+            col.append(cell)
+    if columns[0]:
+        chunks.append(columns)
+    pages = []
+    for index, columns in enumerate(chunks or [None]):
+        embed = discord.Embed(title=f"🖥️ {ip_prefix}.x 사용 현황", color=discord.Color.blue())
+        if columns:
+            for name, col in zip(("IP주소", "이름", "기기 · 등록일"), columns):
+                embed.add_field(name=name, value="\n".join(col), inline=True)
+        else:
+            embed.description = "현재 등록된 IP가 없습니다."
+        embed.set_footer(text=f"페이지 {index + 1}/{len(chunks) or 1}  |  총 {len(entries)}개 IP")
+        pages.append(embed)
+    return pages
+
 
 def build_status_pages(
     entries: list[tuple[UserRecord, IPEntry]],
     ip_prefix: str,
+    mobile: bool = False,
 ) -> list[discord.Embed]:
-    """(UserRecord, IPEntry) 쌍 목록을 코드 블록 표 형식의 embed 목록으로 변환한다."""
-    if not entries:
-        embed = discord.Embed(
-            title=f"🖥️ {ip_prefix}.x 사용 현황",
-            description="현재 등록된 IP가 없습니다.",
-            color=discord.Color.blue(),
-        )
-        return [embed]
+    """Keep the original three embed columns, with inline-code cells."""
+    if not mobile:
+        return _build_column_pages(entries, ip_prefix)
 
-    total = len(entries)
-    total_pages = max(1, math.ceil(total / _PER_PAGE))
+    def render(rows: list[str]) -> str:
+        return "\n".join(rows)
+
+    descriptions, rows = [], []
+    for _, ip in entries:
+        row = _status_box(ip, mobile)
+        if rows and (len(rows) >= (5 if mobile else _PER_PAGE)
+                     or len(render(rows + [row])) > 4000):
+            descriptions.append(render(rows))
+            rows = []
+        rows.append(row)
+    if rows:
+        descriptions.append(render(rows))
+    if not descriptions:
+        descriptions = ["현재 등록된 IP가 없습니다."]
     pages = []
-
-    # 컬럼 폭 설정
-    col_ip = 5    # 마지막 옥텟 (최대 3자리 + 여유)
-    col_name = 10  # 이름
-    col_dev = 10   # 기기
-    col_date = 10  # 등록일
-    col_src = 2    # 방식
-
-    header = (
-        f" {'IP':>{col_ip}} │ "
-        f"{'이름':<{col_name - 2}}│ "
-        f"{'기기':<{col_dev - 2}}│ "
-        f"{'등록일':<{col_date - 2}}│"
-        f"{'':>{col_src}}"
-    )
-    separator = "─" * (col_ip + 1) + "┼" + "─" * (col_name + 1) + "┼" + "─" * (col_dev + 1) + "┼" + "─" * (col_date + 1) + "┼" + "─" * (col_src + 1)
-
-    for p in range(total_pages):
-        chunk = entries[p * _PER_PAGE : (p + 1) * _PER_PAGE]
-        lines = [header, separator]
-
-        for _, ip in chunk:
-            last_octet = ip.address.split(".")[-1] if "." in ip.address else ip.address
-            name = _truncate(ip.person_name or "—", col_name)
-            dev = _truncate(ip.device_label or "—", col_dev)
-            date = ip.created_at[:10]
-            src = "🤖" if ip.source == "auto" else "✏️"
-
-            lines.append(
-                f" {last_octet:>{col_ip}} │ "
-                f"{_pad(name, col_name)}│ "
-                f"{_pad(dev, col_dev)}│ "
-                f"{date:<{col_date}}│"
-                f"{src}"
-            )
-            lines.append(separator)
-
-        table = "```\n" + "\n".join(lines) + "\n```"
-
-        embed = discord.Embed(
-            title=f"🖥️ {ip_prefix}.x 사용 현황",
-            description=table,
-            color=discord.Color.blue(),
-        )
-        embed.set_footer(text=f"페이지 {p + 1}/{total_pages}  |  총 {total}개 IP  |  ✏️ 수동  🤖 자동")
+    for index, description in enumerate(descriptions):
+        embed = discord.Embed(title=f"🖥️ {ip_prefix}.x 사용 현황",
+                              description=description, color=discord.Color.blue())
+        mode = "모바일" if mobile else "표"
+        embed.set_footer(text=f"페이지 {index + 1}/{len(descriptions)}  |  총 {len(entries)}개 IP  |  {mode} 보기")
         pages.append(embed)
-
     return pages
 
 
@@ -118,13 +115,17 @@ def build_status_pages(
 # ---------------------------------------------------------------------------
 
 class StatusView(discord.ui.View):
-    def __init__(self, pages: list[discord.Embed]) -> None:
+    def __init__(self, pages: list[discord.Embed], mobile_pages: list[discord.Embed] | None = None) -> None:
         super().__init__(timeout=120)
+        self.table_pages = pages
+        self.mobile_pages = mobile_pages or pages
+        self.mobile = False
         self.pages = pages
         self.page = 0
         self._refresh_buttons()
 
     def _refresh_buttons(self) -> None:
+        self.btn_layout.label = "표 보기" if self.mobile else "모바일 보기"
         self.btn_prev.disabled = self.page == 0
         self.btn_next.disabled = self.page >= len(self.pages) - 1
 
@@ -151,6 +152,20 @@ class StatusView(discord.ui.View):
             if not interaction.response.is_done():
                 await interaction.response.defer(ephemeral=True)
             await interaction.followup.send("❌ 페이지 전환 중 오류가 발생했습니다.", ephemeral=True)
+
+    @discord.ui.button(label="모바일 보기", style=discord.ButtonStyle.primary)
+    async def btn_layout(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
+        self.mobile = not self.mobile
+        self.pages = self.mobile_pages if self.mobile else self.table_pages
+        self.page = 0
+        self._refresh_buttons()
+        try:
+            await interaction.response.edit_message(embed=self.pages[0], view=self)
+        except Exception:
+            logger.exception("btn_layout edit_message 실패")
+            if not interaction.response.is_done():
+                await interaction.response.defer(ephemeral=True)
+            await interaction.followup.send("❌ 보기 전환 중 오류가 발생했습니다.", ephemeral=True)
 
     async def on_timeout(self) -> None:
         for item in self.children:
@@ -180,8 +195,8 @@ def build_help_embed(ip_prefix: str) -> discord.Embed:
         inline=False,
     )
     embed.add_field(
-        name="/release [ip] [person]",
-        value=f"특정 IP를 해제하거나, 특정 개인의 IP 등록을 전부 해제합니다. 예: `/release {ip_prefix}.***`, `/release 송지한`",
+        name="/release <ip>",
+        value=f"내 IP 등록을 해제합니다. 관리자는 다른 사람의 IP도 해제할 수 있습니다. 예: `/release {ip_prefix}.***`",
         inline=False,
     )
     embed.add_field(
@@ -194,7 +209,7 @@ def build_help_embed(ip_prefix: str) -> discord.Embed:
     )
     embed.add_field(
         name="/status",
-        value="현재 등록된 모든 IP정보를 표시합니다.",
+        value="전체 IP를 IP주소·이름·기기/등록일 열로 표시합니다. `모바일 보기` 버튼으로 세로 박스로 전환할 수 있습니다.",
         inline=False,
     )
     embed.add_field(
@@ -202,5 +217,7 @@ def build_help_embed(ip_prefix: str) -> discord.Embed:
         value="이 도움말을 표시합니다.",
         inline=False,
     )
+    embed.add_field(name="/howtoconnect [ip]", value="Windows 유선 인터넷 설정 방법과 항목별 복사용 버튼을 표시합니다.", inline=False)
+    embed.add_field(name="/recommend", value="미등록 IP 추천 목록에서 번호를 선택하면 본인 IP로 등록됩니다.", inline=False)
     embed.set_footer(text=f"허용 대역: {ip_prefix}.1 ~ {ip_prefix}.254  |  ✏️ 수동  🤖 자동")
     return embed

@@ -116,12 +116,14 @@ class IPRegistry:
 
         return False, f"`{address}` 은(는) 내 IP 목록에 없습니다."
 
-    def release_by_person(self, person_name: str) -> tuple[bool, str]:
+    def release_by_person(self, person_name: str, user_id: int | None = None) -> tuple[bool, str]:
         """사람 이름으로 등록된 모든 IP를 해제한다 (대소문자 구분 없음)."""
         name_lower = person_name.strip().lower()
         released: list[str] = []
 
-        for user_id, user in list(self._users.items()):
+        for owner_id, user in list(self._users.items()):
+            if user_id is not None and owner_id != user_id:
+                continue
             remaining = []
             for entry in user.ips:
                 if entry.person_name.strip().lower() == name_lower:
@@ -131,7 +133,7 @@ class IPRegistry:
                     remaining.append(entry)
             user.ips = remaining
             if not user.ips:
-                del self._users[user_id]
+                del self._users[owner_id]
 
         if not released:
             return False, f"**{person_name}** 이름으로 등록된 IP가 없습니다."

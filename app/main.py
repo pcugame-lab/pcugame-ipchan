@@ -46,11 +46,10 @@ async def _run() -> None:
     logger.info(f"현재 등록 IP 수: {registry.count()}개")
 
     # 웹서버 시작
-    web_app = create_web_app(
-        registry, token_store, config.ip_prefix,
-        rate_limit_window=config.rate_limit_window,
-        rate_limit_max=config.rate_limit_max,
-    )
+    web_app = create_web_app(registry, token_store, config.ip_prefix,
+                             rate_limit_window=config.rate_limit_window,
+                             rate_limit_max=config.rate_limit_max,
+                             ip_last_octet_range=config.ip_last_octet_range)
     runner = web.AppRunner(web_app)
     await runner.setup()
     site = web.TCPSite(runner, config.web_host, config.web_port)

@@ -10,6 +10,8 @@ from app.config import Config
 from app.data import IPRegistry
 from app.formatter import StatusView, build_help_embed, build_status_pages
 from app.security import check_all_permissions
+from app.recommend import RecommendView
+from app.range_confirmation import RangeConfirmationView, outside_range, warning_text
 from app.tokens import TokenStore
 
 logger = logging.getLogger(__name__)
@@ -33,7 +35,7 @@ def _validate_ip(ip: str, ip_prefix: str) -> Optional[str]:
     """유효하면 None, 오류 시 오류 메시지 반환."""
     parts = ip.strip().split(".")
     if len(parts) != 4:
-        return "올바른 IPv4 형식이 아닙니다. 예: `192.168.1.100`"
+        return "올바른 IPv4 형식이 아닙니다. 예: `203.250.133.100`"
     expected = ip_prefix.split(".")
     for got, exp in zip(parts[:3], expected):
         if got != exp:
@@ -97,13 +99,13 @@ class LabIPBot(discord.Client):
 
             @self.tree.command(
                 name="register",
-                description="IP를 등록합니다",
+                description="IP를 등록합니다. ip 생략 시 자동 감지 링크를 발급합니다.",
                 guild=guild_obj,
             )
             @app_commands.describe(
-                ip="IP 주소 (생략하면 자동 감지 링크 발급)",
-                device="기기 이름",
-                person="본인 이름",
+                ip="직접 입력할 IP 주소 (생략하면 자동 감지 링크 발급)",
+                device="기기 이름 (예: 랩탑, 데스크탑)",
+                person="사람 이름 (예: 홍길동)",
             )
             async def cmd_register(
                 interaction: discord.Interaction,
@@ -115,7 +117,7 @@ class LabIPBot(discord.Client):
 
             @self.tree.command(
                 name="release",
-                description="등록된 IP를 해제합니다.",
+                description="등록된 특정 IP를 해제합니다.",
                 guild=guild_obj,
             )
             @app_commands.describe(ip="해제할 IP 주소 또는 사람 이름")
@@ -147,6 +149,19 @@ class LabIPBot(discord.Client):
             )
             async def cmd_status(interaction: discord.Interaction) -> None:
                 await self._handle_status(interaction)
+
+            @self.tree.command(
+                name="howtoconnect",
+                description="Windows에서 유선 인터넷 IPv4를 설정하는 방법을 안내합니다.",
+                guild=guild_obj,
+            )
+            @app_commands.describe(ip="설정할 본인 IP (예: 221). 생략하면 본인 등록 IP가 하나일 때 자동 표시")
+            async def cmd_howtoconnect(interaction: discord.Interaction, ip: Optional[str] = None) -> None:
+                await self._handle_howtoconnect(interaction, ip)
+
+            @self.tree.command(name="recommend", description="미등록 IP를 추천받고 선택한 번호를 내 IP로 등록합니다.", guild=guild_obj)
+            async def cmd_recommend(interaction: discord.Interaction) -> None:
+                await self._handle_howtoconnect(interaction)
 
             @self.tree.command(
                 name="help",
@@ -187,6 +202,7 @@ class LabIPBot(discord.Client):
         ip: Optional[str],
         device: Optional[str],
         person: Optional[str],
+        _range_confirmed: bool = False,
     ) -> None:
         await interaction.response.defer(ephemeral=True)
 
@@ -228,17 +244,31 @@ class LabIPBot(discord.Client):
                     await interaction.followup.send(f"❌ {validation_error}", ephemeral=True)
                     return
 
+                if not _range_confirmed and outside_range(ip, self.config.ip_last_octet_range):
+                    async def proceed(confirm_interaction):
+                        await self._handle_register(confirm_interaction, ip, device, person, _range_confirmed=True)
+                    await interaction.followup.send(
+                        warning_text(ip, self.config.ip_last_octet_range),
+                        view=RangeConfirmationView(interaction.user.id, proceed), ephemeral=True)
+                    return
+
+                owner = self.registry.find_ip_owner(ip)
+                admin_override = self.config.is_admin(user.id) and owner is not None and owner.user_id != user.id
+                target = owner if admin_override else None
                 success, message = self.registry.register(
-                    user_id=user.id,
-                    username=str(user),
-                    display_name=display_name,
+                    user_id=target.user_id if target else user.id,
+                    username=target.username if target else str(user),
+                    display_name=target.display_name if target else display_name,
                     address=ip,
                     device_label=device_label,
-                    person_name=person_name,
+                    person_name=(person_name if person is not None else "") if admin_override else person_name,
                     source="manual",
                 )
                 if success:
-                    logger.info(f"수동 등록: {ip} ← {user} (id={user.id})")
+                    logger.info("수동 등록: ip=%s actor_id=%s owner_id=%s admin_override=%s",
+                                ip, user.id, target.user_id if target else user.id, admin_override)
+                    if admin_override:
+                        message += " (관리자 권한)"
                     await interaction.followup.send(f"✅ {message}", ephemeral=True)
                 else:
                     await interaction.followup.send(f"❌ {message}", ephemeral=True)
@@ -296,22 +326,38 @@ class LabIPBot(discord.Client):
                 await interaction.followup.send(f"❌ {error_msg}", ephemeral=True)
                 return
 
+            ip = _expand_ip(ip, self.config.ip_prefix)
+            validation_error = _validate_ip(ip, self.config.ip_prefix)
+            if validation_error and "." not in ip and not ip.strip().isdigit():
+                success, message = self.registry.release_by_person(
+                    ip.strip(), user_id=None if self.config.is_admin(interaction.user.id) else interaction.user.id)
+                if success:
+                    logger.info("이름으로 IP 해제: actor_id=%s name=%s", interaction.user.id, ip.strip())
+                await interaction.followup.send(f"{'✅' if success else '❌'} {message}", ephemeral=True)
+                return
+            if validation_error:
+                await interaction.followup.send(f"❌ {validation_error}", ephemeral=True)
+                return
+
             user = interaction.user
-            expanded = _expand_ip(ip, self.config.ip_prefix)
-            validation_error = _validate_ip(expanded, self.config.ip_prefix)
-
-            if validation_error is None:
-                # IP 주소로 해제
-                success, message = self.registry.release(user.id, expanded)
-                if success:
-                    logger.info(f"IP 해제: {expanded} ← {user} (id={user.id})")
-            else:
-                # 사람 이름으로 해제
-                success, message = self.registry.release_by_person(ip.strip())
-                if success:
-                    logger.info(f"사람 이름으로 IP 해제: '{ip.strip()}' ← {user} (id={user.id})")
-
+            owner = self.registry.find_ip_owner(ip)
+            admin_override = (
+                self.config.is_admin(user.id)
+                and owner is not None
+                and owner.user_id != user.id
+            )
+            target_user_id = owner.user_id if admin_override else user.id
+            if self.config.is_admin(user.id) and owner is None:
+                await interaction.followup.send("❌ 등록되지 않은 IP입니다.", ephemeral=True)
+                return
+            success, message = self.registry.release(target_user_id, ip)
             if success:
+                logger.info(
+                    "IP 해제: ip=%s actor_id=%s owner_id=%s admin_override=%s",
+                    ip, user.id, target_user_id, admin_override,
+                )
+                if admin_override:
+                    message += " (관리자 권한)"
                 await interaction.followup.send(f"✅ {message}", ephemeral=True)
             else:
                 await interaction.followup.send(f"❌ {message}", ephemeral=True)
@@ -369,14 +415,20 @@ class LabIPBot(discord.Client):
                     return
 
             user = interaction.user
+            owner = self.registry.find_ip_owner(ip)
+            admin_override = self.config.is_admin(user.id) and owner is not None and owner.user_id != user.id
+            target_user_id = owner.user_id if admin_override else user.id
             success, message = self.registry.update_labels(
-                user_id=user.id,
+                user_id=target_user_id,
                 address=ip,
                 device_label=device_label,
                 person_name=person_name,
             )
             if success:
-                logger.info(f"레이블 변경: {ip} ← {user} (id={user.id})")
+                logger.info("레이블 변경: ip=%s actor_id=%s owner_id=%s admin_override=%s",
+                            ip, user.id, target_user_id, admin_override)
+                if admin_override:
+                    message += " (관리자 권한)"
                 await interaction.followup.send(f"✅ {message}", ephemeral=True)
             else:
                 await interaction.followup.send(f"❌ {message}", ephemeral=True)
@@ -400,12 +452,9 @@ class LabIPBot(discord.Client):
 
             entries = self.registry.get_all_entries()
             pages = build_status_pages(entries, self.config.ip_prefix)
-
-            if len(pages) == 1:
-                await interaction.followup.send(embed=pages[0], ephemeral=True)
-            else:
-                view = StatusView(pages)
-                await interaction.followup.send(embed=pages[0], view=view, ephemeral=True)
+            mobile_pages = build_status_pages(entries, self.config.ip_prefix, mobile=True)
+            view = StatusView(pages, mobile_pages)
+            await interaction.followup.send(embed=pages[0], view=view, ephemeral=True)
 
         except Exception:
             logger.exception("_handle_status 처리 중 예외 발생")
@@ -414,6 +463,35 @@ class LabIPBot(discord.Client):
     # ------------------------------------------------------------------ #
     # /help                                                                #
     # ------------------------------------------------------------------ #
+
+    async def _handle_howtoconnect(self, interaction: discord.Interaction, ip: Optional[str] = None, _range_confirmed: bool = False) -> None:
+        await interaction.response.defer(ephemeral=True)
+        try:
+            error, _ = check_all_permissions(interaction, self.config.guilds)
+            if error:
+                await interaction.followup.send(f"❌ {error}", ephemeral=True)
+                return
+            if ip is not None:
+                ip = _expand_ip(ip, self.config.ip_prefix)
+                error = _validate_ip(ip, self.config.ip_prefix)
+                if error:
+                    await interaction.followup.send(f"❌ {error}", ephemeral=True)
+                    return
+            else:
+                own_ips = self.registry.get_user_ips(interaction.user.id)
+                ip = own_ips[0].address if len(own_ips) == 1 else None
+            if ip is not None and not _range_confirmed and outside_range(ip, self.config.ip_last_octet_range):
+                async def proceed(confirm_interaction):
+                    await self._handle_howtoconnect(confirm_interaction, ip, _range_confirmed=True)
+                await interaction.followup.send(
+                    warning_text(ip, self.config.ip_last_octet_range),
+                    view=RangeConfirmationView(interaction.user.id, proceed), ephemeral=True)
+                return
+            view = RecommendView(self, interaction.user.id, ip)
+            await interaction.followup.send(embed=view.embed(), view=view, ephemeral=True)
+        except Exception:
+            logger.exception("_handle_howtoconnect 처리 중 예외 발생")
+            await interaction.followup.send("❌ 안내를 불러오지 못했습니다. 잠시 후 다시 시도하세요.", ephemeral=True)
 
     async def _handle_help(self, interaction: discord.Interaction) -> None:
         await interaction.response.defer(ephemeral=True)

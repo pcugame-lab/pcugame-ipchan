@@ -15,15 +15,20 @@ class GuildConfig:
 class Config:
     discord_token: str
     guilds: tuple[GuildConfig, ...]
-    ip_prefix: str          # 허용 IP 앞 3옥텟 (예: "192.168.1")
+    ip_prefix: str          # 허용 IP 앞 3옥텟 (예: "203.250.133")
     ip_state_file: str      # IP 등록 상태 JSON 경로
     token_file: str         # Claim 토큰 JSON 경로
     web_host: str           # 웹서버 bind 주소
     web_port: int           # 웹서버 포트
     web_base_url: str       # 클라이언트가 접속하는 공개 URL (claim 링크 생성용)
     token_ttl_seconds: int  # Claim 토큰 유효 시간(초)
-    rate_limit_window: int  # Rate limit 윈도우(초)
-    rate_limit_max: int     # 윈도우 내 최대 요청 수
+    rate_limit_window: int = 60
+    rate_limit_max: int = 10
+    admin_user_ids: frozenset[int] = frozenset()
+    ip_last_octet_range: tuple[int, int] | None = None
+
+    def is_admin(self, user_id: int) -> bool:
+        return user_id in self.admin_user_ids
 
 
 def load_config() -> Config:
@@ -41,8 +46,6 @@ def load_config() -> Config:
     web_port = int(os.environ.get("WEB_PORT", "8080"))
     web_base_url = os.environ.get("WEB_BASE_URL", f"http://localhost:{web_port}").strip().rstrip("/")
     token_ttl = int(os.environ.get("TOKEN_TTL_SECONDS", "300"))
-    rate_limit_window = int(os.environ.get("RATE_LIMIT_WINDOW", "60"))
-    rate_limit_max = int(os.environ.get("RATE_LIMIT_MAX", "10"))
 
     return Config(
         discord_token=token,
@@ -54,8 +57,10 @@ def load_config() -> Config:
         web_port=web_port,
         web_base_url=web_base_url,
         token_ttl_seconds=token_ttl,
-        rate_limit_window=rate_limit_window,
-        rate_limit_max=rate_limit_max,
+        rate_limit_window=int(os.environ.get("RATE_LIMIT_WINDOW", "60")),
+        rate_limit_max=int(os.environ.get("RATE_LIMIT_MAX", "10")),
+        admin_user_ids=_load_admin_user_ids(),
+        ip_last_octet_range=_load_ip_last_octet_range(),
     )
 
 
@@ -81,3 +86,29 @@ def _load_guilds() -> list[GuildConfig]:
     if not guilds:
         raise ValueError("GUILD_1_ID 환경변수가 설정되지 않았습니다.")
     return guilds
+
+
+def _load_admin_user_ids() -> frozenset[int]:
+    raw = os.environ.get("ADMIN_USER_IDS", "").strip()
+    if not raw:
+        return frozenset()
+    ids = set()
+    for value in raw.split(","):
+        value = value.strip()
+        if not value.isascii() or not value.isdecimal() or not 0 < int(value) < 2**64:
+            raise ValueError("ADMIN_USER_IDS에는 쉼표로 구분한 Discord 사용자 ID를 입력하세요.")
+        ids.add(int(value))
+    return frozenset(ids)
+
+
+def _load_ip_last_octet_range() -> tuple[int, int] | None:
+    raw = os.environ.get("IP_LAST_OCTET_RANGE", "").strip()
+    if not raw:
+        return None
+    parts = raw.split("-")
+    if len(parts) != 2 or any(not p.strip().isascii() or not p.strip().isdecimal() for p in parts):
+        raise ValueError("IP_LAST_OCTET_RANGE는 시작-끝 형식이어야 합니다. 예: 221-254")
+    start, end = (int(p.strip()) for p in parts)
+    if not 1 <= start <= end <= 254:
+        raise ValueError("IP_LAST_OCTET_RANGE는 1~254 사이의 오름차순 범위여야 합니다.")
+    return start, end
