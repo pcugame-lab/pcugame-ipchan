@@ -77,11 +77,12 @@ class ConnectTests(unittest.IsolatedAsyncioTestCase):
             self.assertTrue(all(isinstance(c, expected_type) for c in view.children))
             view.stop()
 
-    async def test_no_ip_does_not_offer_placeholder_to_copy(self):
+    async def test_no_ip_shows_prefix_without_last_octet(self):
         view = ConnectView('203.250.133')
-        self.assertIn('사용할 IP 번호를 선택하세요.', view.embed().description)
+        self.assertIn('IP 주소\n```\n203.250.133.\n```', view.embed().description)
         self.assertNotIn('203.250.133.xxx', view.embed().description)
-        self.assertEqual(view.embed().description.count('```'), 6)
+        self.assertEqual(view.embed().description.count('```'), 8)
+        self.assertEqual(build_connect_embed('203.250.133').fields[0].value, '```\n203.250.133.\n```')
         view.stop()
 
     async def test_single_own_ip_selected(self):
@@ -96,7 +97,7 @@ class ConnectTests(unittest.IsolatedAsyncioTestCase):
             self.registry.register(111, 'owner', 'Owner', f'203.250.133.{last}')
         await self.bot._handle_howtoconnect(self.i)
         args = self.i.followup.send.call_args.kwargs
-        self.assertIn('사용할 IP 번호를 선택하세요.', args['embed'].description)
+        self.assertIn('IP 주소\n```\n203.250.133.\n```', args['embed'].description)
         args['view'].stop()
 
     async def test_invalid_ip_rejected(self):

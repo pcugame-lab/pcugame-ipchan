@@ -20,7 +20,7 @@ GUIDE_STEPS = (
 
 def connection_values(prefix: str, ip: str | None = None) -> dict[str, str]:
     return {
-        'IP 주소': ip or f'{prefix}.xxx',
+        'IP 주소': ip or f'{prefix}.',
         '서브넷 마스크': '255.255.255.0',
         '게이트웨이': f'{prefix}.1',
         '기본 설정 DNS': '8.8.8.8',
@@ -30,15 +30,13 @@ def connection_values(prefix: str, ip: str | None = None) -> dict[str, str]:
 def build_values_embed(prefix: str, ip: str | None = None) -> discord.Embed:
     return discord.Embed(
         description='\n'.join(
-            f'{label}\n{copyable_value(label, value, ip)}'
+            f'{label}\n{copyable_value(value)}'
             for label, value in connection_values(prefix, ip).items()),
         color=discord.Color.blue(),
     )
 
 
-def copyable_value(label: str, value: str, ip: str | None) -> str:
-    if label == 'IP 주소' and ip is None:
-        return '사용할 IP 번호를 선택하세요.'
+def copyable_value(value: str) -> str:
     return f'```\n{value}\n```'
 
 
@@ -48,7 +46,7 @@ def build_connect_embed(prefix: str, ip: str | None = None, step: int = 0) -> di
     embed.title = f'🌐 유선 인터넷 연결 · {title}'
     embed.description = instruction
     for label, value in connection_values(prefix, ip).items():
-        embed.add_field(name=label, value=copyable_value(label, value, ip), inline=False)
+        embed.add_field(name=label, value=copyable_value(value), inline=False)
     if ip is None:
         embed.add_field(
             name='IP 번호 선택',
