@@ -4,13 +4,14 @@
 
 **연구실 IP 등록·추천을 위한 Discord 봇**
 
+[![Test and deploy](https://github.com/pcugame-lab/pcugame-ipchan/actions/workflows/deploy.yml/badge.svg)](https://github.com/pcugame-lab/pcugame-ipchan/actions/workflows/deploy.yml)
 [![Python 3.12](https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![discord.py](https://img.shields.io/badge/discord.py-2.3.2-5865F2?logo=discord&logoColor=white)](https://discordpy.readthedocs.io/)
 [![Docker Compose](https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker&logoColor=white)](docker-compose.yml)
 
 IP 현황 조회부터 번호 선택, 본인 명의 등록, Windows 연결 안내까지.
 
-[빠른 시작](#빠른-시작) · [명령어](#명령어) · [IP 추천과 등록](#ip-추천과-등록) · [환경변수](#환경변수) · [개발과 검증](#개발과-검증)
+[빠른 시작](#빠른-시작) · [명령어](#명령어) · [IP 추천과 등록](#ip-추천과-등록) · [환경변수](#환경변수) · [개발과 검증](#개발과-검증) · [자동 배포](#자동-배포)
 
 </div>
 
@@ -40,8 +41,8 @@ IP 현황 조회부터 번호 선택, 본인 명의 등록, Windows 연결 안�
 ### Docker Compose 실행
 
 ```bash
-git clone https://github.com/bipolarrr/paichai-ipchan-vibed.git
-cd paichai-ipchan-vibed
+git clone https://github.com/pcugame-lab/pcugame-ipchan.git
+cd pcugame-ipchan
 cp .env.example .env
 ```
 
@@ -192,6 +193,60 @@ python -m unittest discover -s tests -v
 | [`app/range_confirmation.py`](app/range_confirmation.py) | 범위 밖 확인 |
 | [`app/webserver.py`](app/webserver.py) | 자동 등록 웹 요청 |
 | [`tests/`](tests/) | 관리자 권한·출력·추천·확인·웹 등록 회귀 검사 |
+
+## 자동 배포
+
+[`Test and deploy`](.github/workflows/deploy.yml)는 `pcugame-lab/pcugame-ipchan`의 `master` 변경을 대상으로 한다. Pull request에서는 테스트만 수행한다.
+
+```mermaid
+flowchart LR
+    A["master push"] --> B["Python 테스트·스크립트 검사"]
+    B --> C["production 환경"]
+    C --> D["gh-deploy SSH 접속"]
+    D --> E["CPU 제한을 적용한 이미지 빌드"]
+    E --> F["서비스 전환·HTTP와 Discord 준비 상태 확인"]
+    F --> G["실패 시 이전 이미지 복구"]
+```
+
+### GitHub 설정
+
+`production` 환경의 배포 허용 브랜치는 `master`로 제한한다. 다음 값을 설정한다.
+
+| 구분 | 이름 | 용도 |
+| --- | --- | --- |
+| Repository variable | `IPCHAN_DEPLOY_ENABLED` | 서버 준비와 최초 이전을 완료한 후 `true`로 지정 |
+| Environment secret | `IPCHAN_DEPLOY_SSH_KEY` | 전용 배포 SSH 개인키 |
+| Environment variable | `IPCHAN_SSH_HOST` | GitHub runner에서 접근 가능한 서버 주소 |
+| Environment variable | `IPCHAN_SSH_PORT` | SSH 포트, 공란이면 `5050` |
+| Environment variable | `IPCHAN_SSH_KNOWN_HOSTS` | 서버에서 확인한 SSH host key와 주소·포트 |
+
+자동 배포는 해당 저장소의 `master`에서만 실행한다. 최신 커밋으로 대체된 배포는 활성화를 생략하며, 배포 작업은 순서대로 실행한다. **Actions → Test and deploy → Run workflow**에서도 현재 `master`를 배포할 수 있다.
+
+### 서버 구성
+
+서버에는 `gh-deploy` 계정의 SSH 접속, rootless Podman, user systemd, lingering이 필요하다. [`deploy/bootstrap.sh`](deploy/bootstrap.sh)는 해당 계정으로 실행하여 전용 경로를 초기화한다.
+
+| 경로 / 서비스 | 용도 |
+| --- | --- |
+| `~/server/ipchan/shared/.env` | 서버에만 저장하는 봇 환경변수 |
+| `~/server/ipchan/shared/data/` | 등록 데이터와 일회용 토큰 |
+| `~/server/ipchan/shared/logs/` | 애플리케이션 로그 |
+| `~/server/ipchan/releases/<SHA>/` | 커밋별 소스 |
+| `~/server/ipchan/current` | 마지막 정상 배포 소스 |
+| `~/server/ipchan/backups/` | 배포 전 서비스 설정과 데이터 복사본 |
+| `pcugame-ipchan.service` | `gh-deploy`의 user systemd 서비스 |
+
+기존 봇을 이전할 때는 기존 서비스를 중지하고 `.env`, `data/`, `logs/`를 `shared/`에 복사한 뒤 새 서비스를 시작한다. 동일 토큰의 봇 두 개를 동시에 실행하지 않는다. 초기 이전이 실패하면 기존 서비스를 복구한다.
+
+[`deploy/rootless-deploy.sh`](deploy/rootless-deploy.sh)는 빌드에 전체 논리 CPU 시간의 90% 한도와 낮은 CPU·I/O 우선순위를 적용한다. HTTP `/health`와 Discord의 준비 완료 로그를 모두 확인한 후 배포 성공으로 기록한다. 실패 시 이전 서비스 설정과 이미지를 복구하며, 등록 데이터는 이전 상태로 되돌리지 않는다.
+
+운영 명령은 `gh-deploy` 계정에서 실행한다.
+
+```bash
+systemctl --user status pcugame-ipchan.service
+journalctl --user -u pcugame-ipchan.service -n 100 --no-pager
+cat ~/server/ipchan/deployed-revision
+```
 
 ## 운영 점검
 

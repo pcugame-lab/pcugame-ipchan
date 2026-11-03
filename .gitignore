@@ -44,8 +44,6 @@ env/
 # macOS
 .DS_Store
 
-# Docker
-*.dockerignore
 
 # 실행 데이터와 서버 백업
 data/
